@@ -38,7 +38,6 @@ class StrwaiDataGenerator:
 
         # Fix seed for reproducibility
         self.seed = seed
-        self.set_seed(self.seed)
 
         # Rank labelsAI for queries and resources
         self.q_rank = q_rank
@@ -64,12 +63,13 @@ class StrwaiDataGenerator:
         :return: array of queries
         """
         # Generate query scores for AI labels
+        self.set_seed(self.seed)
         queriesAI = np.zeros((n_queries, self.n_labelsAI))
         for i in range(n_queries):
             if self.q_rank:
                 queriesAI[i] = self.power_law(self.q_rank)
             else:
-                queriesAI[i] = np.random.uniform(0., 1.)
+                queriesAI[i] =  np.random.uniform(0., 1.,size=self.n_labelsAI)
         # Generate discrete query scores for countries
         queriesCountry = self.country_score(n_queries, self.q_countries)
         # Concatenate scores
@@ -82,12 +82,13 @@ class StrwaiDataGenerator:
         :return: array of resources
         """
         # Generate query scores for AI labels
+        self.set_seed(self.seed)
         resourcesAI = np.zeros((n_resources, self.n_labelsAI))
         for i in range(n_resources):
             if self.r_rank:
                 resourcesAI[i] = self.power_law(self.r_rank)
             else:
-                resourcesAI[i] = np.random.uniform(0., 1.)
+                resourcesAI[i] =  np.random.uniform(0., 1.,size=self.n_labelsAI)
         # Generate discrete query scores for countries
         resourcesCountry = self.country_score(n_resources, self.r_countries)
         # Concatenate scores
@@ -100,10 +101,11 @@ class StrwaiDataGenerator:
         :param n_resources: number of resources to generate
         :return: array of queries, array of resources
         """
-        # Generate queries
-        queries = self.generate_queries(n_queries)
         # Generate resources
         resources = self.generate_resources(n_resources)
+        # Generate queries
+        queries = self.generate_queries(n_queries)
+
         return queries, resources
 
     def set_seed(self, seed):
@@ -139,8 +141,8 @@ class StrwaiDataGenerator:
         factors *= np.random.power(scaled_exp)
         return factors
 
-    def country_score(self, n_queries, q_countries):
-        countries = np.random.multinomial(1, q_countries, size=n_queries)
+    def country_score(self, n_sample, p_countries):
+        countries = np.random.multinomial(1, p_countries, size=n_sample)
         return countries
 
     def plot_data(self, queries: np.array, resources: np.array, save=False, name='distr'):
@@ -162,7 +164,7 @@ class StrwaiDataGenerator:
             pc.set_facecolor('#aacbf5')
             pc.set_edgecolor('#aacbf5')
             pc.set_alpha(1)
-        plt.vlines(9.55, -0.1, 1.1, color='black', linestyle='dotted')
+        plt.vlines(self.n_labelsAI +0.55, -0.1, 1.1, color='black', linestyle='dotted')
         plt.title(f'Resources', )
         plt.ylim(-0.1, 1.1, )
         plt.ylabel('Scores', fontsize=fontsize)
@@ -172,7 +174,7 @@ class StrwaiDataGenerator:
                                                                          range(self.n_labelsAI,
                                                                                self.n_labelsAI + self.n_countries)],
                    rotation=50, fontsize=fontsize)
-        for i in range(-1, -6, -1):
+        for i in range(-1, -self.n_countries-1, -1):
             ax.get_xticklabels()[i].set_weight("bold")
 
         if save:
@@ -181,24 +183,19 @@ class StrwaiDataGenerator:
 
         ax = plt.figure(figsize=(9, 4), dpi=130).add_subplot(111)
         # Query Distr
-        v = plt.violinplot(queries, showmeans=True)
+        v = plt.violinplot(queries[:,:self.n_labelsAI], showmeans=True)
         # Violin plot custom colors to mimic transparency
         for pc in v['bodies']:
             pc.set_facecolor('#aacbf5')
             pc.set_edgecolor('#aacbf5')
             pc.set_alpha(1)
-        plt.vlines(9.55, -0.1, 1.1, color='black', linestyle='dotted')
         plt.title(f'Queries')
         plt.ylim(-0.1, 1.1, )
         plt.ylabel('Scores', fontsize=fontsize)
         plt.yticks(fontsize=fontsize)
-        plt.xticks(range(1, self.n_labelsAI + self.n_countries + 1),
-                   [self.labelsAI[i] for i in range(self.n_labelsAI)] + [self.countries[i] for i in
-                                                                         range(self.n_labelsAI,
-                                                                               self.n_labelsAI + self.n_countries)],
+        plt.xticks(range(1, self.n_labelsAI + 1),
+                   [self.labelsAI[i] for i in range(self.n_labelsAI)],
                    rotation=50, fontsize=fontsize)
-        for i in range(-1, -6, -1):
-            ax.get_xticklabels()[i].set_weight("bold")
 
         if save:
             plt.savefig(os.path.join(cd.PROJECT_DIR, name + '_Query.eps'), format='eps', bbox_inches="tight")

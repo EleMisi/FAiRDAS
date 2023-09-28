@@ -1,3 +1,5 @@
+from collections import OrderedDict
+
 import numpy as np
 from sklearn.feature_extraction import DictVectorizer
 
@@ -84,8 +86,7 @@ class OnlineMatchmaking(base.MatchmakingAlgorithm):
         resource_matrix = self.vectorizer.fit_transform(self.resources_scores)
         self.resource_matrix = resource_matrix.toarray()
 
-    def matchOne(self, query_scores: dict,
-                 return_explanations: bool = False, args={}):
+    def matchOne(self, query_scores: dict, args={}):
         """
         Identify relevant resources w.r.t. a single query
 
@@ -93,16 +94,10 @@ class OnlineMatchmaking(base.MatchmakingAlgorithm):
         - query_scores: a dictionary with
           - keys: label idx
           - values: score for each label
-        - metadata: any other symbolic information
-          - TODO: define format
-        - return_explanations: bool
-            True is explanations need to be returned
         - args: arguments of the distance function
 
         Returns:
         - list of ascending ordered (resource_identifier, matching_score)
-        - explanations
-            -TODO: define format
         """
         # Check resources
         assert len(self.resources) > 0, "No resources found."
@@ -113,31 +108,17 @@ class OnlineMatchmaking(base.MatchmakingAlgorithm):
 
         # Compute matching scores
         res = self.metrics(query_v, self.resource_matrix,
-                           return_explanations=return_explanations, **args)
-        if return_explanations:
-            matching_scores, explanations = res
-        else:
-            matching_scores = res
+                           return_explanations=False, **args)
+        matching_scores = res
 
         # There's only one query, so let's take the first entry from each result
         matching_scores = matching_scores[0]
-        if return_explanations:
-            explanations = explanations[0]
 
-        # Sort resource indexes
+        # Sort resource indexes based on the scores
         resource_idxs = np.argsort(-matching_scores)
 
         # Return list of (resource_identifier, matching_score)
         ordered_matching = [(idx, matching_scores[idx])
                             for idx in resource_idxs]
 
-        # Sort explanations, too
-        if return_explanations:
-            ordered_explanations = [{k: explanations[idx][v]
-                                     for k, v in self.vectorizer.vocabulary_.items()}
-                                    for idx in resource_idxs]
-
-        if return_explanations:
-            return ordered_matching, ordered_explanations
-        else:
-            return ordered_matching
+        return OrderedDict(ordered_matching)

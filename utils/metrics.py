@@ -7,53 +7,49 @@ from sklearn.preprocessing import MinMaxScaler
 import const_define as cd
 
 
-def power_law(rank: tuple) -> np.array:
-    """Compute power law factors based on rank
-    :param rank: tuple of resource index
+def negative_exponential(rank: tuple) -> np.array:
+    """The impact function of each rank entries depends on its position
+    :param rank: tuple with rank resources
     :return: array of power low factors
     """
-    factors = np.ones((len(rank),))
-    exp = np.zeros((len(rank),))
-    # Interval for the exponents
-    sc = MinMaxScaler((1, 10))
-    for i in range(len(rank)):
-        # Label position in the q_rank
-        idx = rank.index(i)
-        # Exponent
-        exp[i] = len(rank) - idx
-    # Scale exponents
-    scaled_exp = sc.fit_transform(exp.reshape(-1, 1)).reshape(-1, )
-    factors *= np.random.power(scaled_exp)
+    # Position in the rank
+    factors = np.zeros(len(rank))
+    for i, idx in enumerate(rank):
+        factors[idx] = (1 / np.exp(i))*10
     return factors
 
 
-def rank_similarity(rank: tuple, old_rank: tuple) -> np.array:
+def rank_similarity(ranks: list, old_ranks: list) -> np.array:
     """
     Compute cosine similarity distance between the two ranks.
-    :param rank:
-        OrderedDict with resources rank and scores
-    :param old_rank:
-        OrderedDict with resources rank and scores
+    :param ranks:
+        list of OrderedDict with resources rank and scores
+    :param old_ranks:
+        list of OrderedDict with resources rank and scores
     :return:
-        cosine similarity distance
+        cosine similarity distance (mean on the rank vectors provided)
     """
-    assert len(rank) == len(old_rank), f'Rank 1 and rank 2 have different lenghts: {len(rank)} and {len(old_rank)}.'
-    # Preprocessing rank
-    rank1 = tuple([i for i in rank])
-    rank2 = tuple([i for i in old_rank])
-    # Build vector of position from rank
-    n_resources = len(rank1)
-    x = np.zeros((n_resources,), dtype=int)
-    y = np.zeros((n_resources,), dtype=int)
-    for i in range(n_resources):
-        x[i] = rank1.index(i)
-        y[i] = rank2.index(i)
-    similarity = cosine_similarity(x.reshape(1, -1), y.reshape(1, -1))
-    distance = 1 - similarity
-    distance = np.around(distance, 5)
-    distance = np.clip(distance, 0, 1)
-    # print(distance, similarity)
-    return distance
+    assert len(ranks) == len(old_ranks), f'Rank 1 and rank 2 have different lengths: {len(ranks)} and {len(old_ranks)}.'
+    # Compute cosine distance for each rank provided
+    cosine_distance = []
+    for rank, old_rank in zip(ranks, old_ranks):
+        # Extract vectors of score from rank
+        rank1 = []
+        rank2 = []
+        for idx,score in rank.items():
+            rank1.append(idx)
+        for idx,score in old_rank.items():
+            rank2.append(idx)
+        rank1,rank2 = np.array(rank1),np.array(rank2)
+        # Compute cosine similarity
+        similarity = cosine_similarity(rank1.reshape(1, -1), rank2.reshape(1, -1))
+        distance = 1 - similarity
+        # Rounding and clipping
+        distance = np.around(distance, 5)
+        distance = np.clip(distance, 0, 1)
+        # Add distance
+        cosine_distance.append(distance)
+    return np.mean(cosine_distance)
 
 
 class DIDI:
@@ -62,57 +58,58 @@ class DIDI:
     https://github.com/giuluck/GeneralizedDisparateImpact/blob/2f9ea0973e7e82dda8fcd1c1a275a8e2e3adcfa5/moving_targets/metrics/constraints.py#L40
     """
 
-    def __init__(self, seed: int, resources_scores: np.ndarray, protected_labels: list, impact_function):
+    def __init__(self, resources_labels: np.ndarray, protected_labels: list, impact_function):
         """
-        :param resources_scores:
+        :param resources_labels:
             matrix with the label score (column) for each resource (row)
         :param protected_labels:
             list of protected labels id
         :param impact_function:
             function to compute impact of resource in the ranking
-        :param seed: seed for reproducibility
         """
-
-        # Fix seed for reproducibility
-        self.seed = self.set_seed(seed)
-        self.indicator_matrix = self.get_indicator_matrix(resources_scores, protected_labels)
-
         self.impact_function = impact_function
+        self.protected_labels = protected_labels
+        self.indicator_matrix =self.get_indicator_matrix(resources_labels, self.protected_labels)
 
-    def __call__(self, rank: OrderedDict, old_rank: OrderedDict, args_impact_fn: dict = {}):
+    def __call__(self, ranks: list, old_ranks: OrderedDict, args_impact_fn: dict = {}):
         """Computes the Disparate Impact Discrimination Index for Regression Tasks given the impact function output
-        :param rank:
-            OrderedDict with resources rank and scores
+        :param ranks:
+            list of OrderedDicts with resources rank and scores
         :return:
             The (absolute) value of the DIDI.
         """
-        # Compute impact function
-        self.seed = self.set_seed(self.seed)
-        output = self.compute_impact_function(rank, **args_impact_fn)
+        n_queries = len(ranks)
+        output = []
+        for rank in ranks:
+            # Compute impact function
+            output.append(self.compute_impact_function(rank, **args_impact_fn))
+        output = np.array(output).ravel()
+        # Compute the indicator matrix
+        indicator_matrix = np.tile(self.indicator_matrix,(1,n_queries))
         # Check indicator matrix shape
-        assert self.indicator_matrix.shape[1] == output.shape[
-            0], f"Wrong number of samples, expected {self.indicator_matrix.shape[1]} got {output.shape[0]}"
+        assert indicator_matrix.shape[1] == output.shape[
+            0], f"Wrong number of samples, expected {indicator_matrix.shape[1]} got {output.shape[0]}"
         # Compute DIDI
-        didi = self.compute_DIDI(output=output)
+        didi = self.compute_DIDI(output=output, indicator_matrix=indicator_matrix)
 
         return didi
 
-    def compute_DIDI(self, output: np.array) -> float:
+    def compute_DIDI(self, output: np.array, indicator_matrix : np.array) -> float:
         """Computes the Disparate Impact Discrimination Index for Regression Tasks given the impact function output
         :param output:
-            array with impact function values
+            array with impact function values (ordered by reources idx)
         :return:
             The (absolute) value of the DIDI.
         """
         # Check indicator matrix shape
-        assert self.indicator_matrix.shape[1] == output.shape[
-            0], f"Wrong number of samples, expected {self.indicator_matrix.shape[1]} got {output.shape[0]}"
+        assert indicator_matrix.shape[1] == output.shape[
+            0], f"Wrong number of samples, expected {indicator_matrix.shape[1]} got {output.shape[0]}"
 
         # Compute DIDI
         didi = 0.0
         total_average = np.mean(output)
         # Loop over protected groups
-        for protected_group in self.indicator_matrix:
+        for protected_group in indicator_matrix:
             # Select output of sample belonging to protected attribute
             protected_targets = output[protected_group]
             # Compute partial DIDI over the protected attribute

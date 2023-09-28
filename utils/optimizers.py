@@ -109,7 +109,6 @@ class RandomWalk:
 class RandomWalk_wHistory(RandomWalk):
 
     def __init__(self, max_iter: int, n_samples: int, decay_rate: float, cost_fn, tolerance: float, patience: int,
-                 mode: str,
                  seed: int, verbose: bool = True):
         """
         Random walk algorithm class
@@ -125,23 +124,17 @@ class RandomWalk_wHistory(RandomWalk):
             improvement threshold for stopping criterion
         :param patience:
             number of iterations with no improvement for stopping criterion
-        :param mode:
-            history mode
         :param seed:
             seed for reproducibility
         """
         super(RandomWalk_wHistory, self).__init__(max_iter, n_samples, decay_rate, cost_fn, tolerance, patience,
                                                   seed, verbose)
 
-        self.mode = mode
-
-    def __call__(self, flag: np.ndarray, previous_ranks: list, args: dict = {}):
+    def __call__(self, flag: np.ndarray, args: dict = {}):
         """
         Perform random walk with diminishing flipping probability starting from the given set of weigths
         :param flag:
             matrix with starting weights
-        :param previous_ranks:
-            list of Ordered dict with previous ranks
         :param args:
             cost function parameters
         :return:
@@ -149,7 +142,7 @@ class RandomWalk_wHistory(RandomWalk):
         """
         weight_history = [flag]
         # Current state cost with hystory
-        curr_cost, x_approx, new_rank = self.cost_fn(flag, previous_ranks=previous_ranks, mode=self.mode, **args)
+        curr_cost, x_approx, new_rank = self.cost_fn(flag, **args)
         cost_history = [[curr_cost, x_approx, new_rank]]
         flipping_p_history = [(1 - self.decay_rate)]
 
@@ -167,7 +160,7 @@ class RandomWalk_wHistory(RandomWalk):
                                           out=np.repeat(flag[None, :], self.n_samples, axis=0).copy())
 
             # Evaluate all candidates
-            evals_list = [self.cost_fn(w_val, previous_ranks=previous_ranks, mode=self.mode, **args) for w_val in
+            evals_list = [self.cost_fn(w_val, **args) for w_val in
                           w_candidates]
             evals_cost = np.array([e[0] for e in evals_list])
             evals_x_approx = np.array([e[1] for e in evals_list])
